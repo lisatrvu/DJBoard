@@ -2,13 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>DJ Board</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>DJ Board</h1>
-  <div class="dj-board">
+  <!-- Orientation Screen -->
+  <div id="orientation-screen" class="screen">
+    <div class="screen-content">
+      <div class="phone-icon">📱</div>
+      <h2>Turn Your Phone</h2>
+      <p>Please rotate your device to landscape mode to start mixing</p>
+      <div class="rotate-arrow">↻</div>
+    </div>
+  </div>
+
+  <!-- Main DJ Board -->
+  <div id="main-content" class="hidden">
+    <h1>DJ Board</h1>
+    <div class="dj-board">
     <!-- Turntable 1 -->
     <div class="turntable-container">
       <div class="turntable" id="turntable1">
@@ -45,6 +60,7 @@
         <div class="turntable-arm"></div>
       </div>
       <p class="turntable-label">Turntable 2</p>
+    </div>
     </div>
   </div>
   <script src="script.js"></script>

@@ -2,6 +2,8 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 body {
@@ -9,33 +11,121 @@ body {
   color: #fff;
   font-family: 'Arial', sans-serif;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(10px, 2vh, 20px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+  width: 100%;
+  position: relative;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Orientation Screen */
+.screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
   padding: 20px;
+}
+
+.screen-content {
+  text-align: center;
+  max-width: 500px;
+  padding: 40px;
+}
+
+.screen-content h2 {
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+  margin-bottom: 20px;
+  text-shadow: 0 0 20px rgba(255, 64, 129, 0.5);
+  letter-spacing: 2px;
+}
+
+.screen-content p {
+  font-size: clamp(1rem, 3vw, 1.2rem);
+  margin-bottom: 30px;
+  opacity: 0.9;
+  line-height: 1.6;
+}
+
+.phone-icon {
+  font-size: clamp(3rem, 10vw, 5rem);
+  margin-bottom: 30px;
+  animation: rotate 2s ease-in-out infinite;
+}
+
+.rotate-arrow {
+  font-size: clamp(2.5rem, 8vw, 4rem);
+  margin-top: 20px;
+  animation: pulse 1.5s ease-in-out infinite;
+  color: #ff4081;
+}
+
+@keyframes rotate {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+}
+
+#main-content {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
 h1 {
-  font-size: 3rem;
-  margin-bottom: 40px;
+  font-size: clamp(1.5rem, 5vw, 3rem);
+  margin-bottom: clamp(15px, 3vh, 40px);
   text-shadow: 0 0 20px rgba(255, 64, 129, 0.5);
   letter-spacing: 3px;
 }
 
 .dj-board {
   display: flex;
-  gap: 40px;
+  gap: clamp(15px, 3vw, 40px);
   justify-content: center;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  width: 100%;
   max-width: 1400px;
   background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
-  padding: 40px;
+  padding: clamp(15px, 3vw, 40px);
   border-radius: 30px;
   box-shadow: 
     0 20px 60px rgba(0, 0, 0, 0.8),
     inset 0 0 100px rgba(255, 64, 129, 0.05);
   border: 2px solid rgba(255, 64, 129, 0.2);
+}
+
+/* Mobile landscape optimization */
+@media (max-height: 600px) and (orientation: landscape) {
+  .dj-board {
+    gap: clamp(10px, 2vw, 20px);
+    padding: clamp(10px, 2vw, 20px);
+  }
+  
+  h1 {
+    margin-bottom: clamp(5px, 1vh, 15px);
+    font-size: clamp(1.2rem, 4vw, 2rem);
+  }
 }
 
 .turntable-container {
@@ -47,10 +137,21 @@ h1 {
 
 .turntable {
   position: relative;
-  width: 300px;
-  height: 300px;
+  width: clamp(150px, 20vw, 300px);
+  height: clamp(150px, 20vw, 300px);
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  flex-shrink: 0;
+}
+
+/* Mobile landscape - smaller turntables */
+@media (max-height: 600px) and (orientation: landscape) {
+  .turntable {
+    width: clamp(120px, 18vw, 250px);
+    height: clamp(120px, 18vw, 250px);
+  }
 }
 
 .turntable:active {
@@ -116,11 +217,18 @@ h1 {
 }
 
 .turntable-label {
-  font-size: 1.2rem;
+  font-size: clamp(0.8rem, 2vw, 1.2rem);
   font-weight: bold;
   color: #ff4081;
   text-transform: uppercase;
   letter-spacing: 2px;
+}
+
+@media (max-height: 600px) and (orientation: landscape) {
+  .turntable-label {
+    font-size: clamp(0.7rem, 1.5vw, 1rem);
+    margin-top: 5px;
+  }
 }
 
 .control-panel {
@@ -128,8 +236,16 @@ h1 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 200px;
-  padding: 20px;
+  min-width: clamp(150px, 18vw, 200px);
+  padding: clamp(10px, 2vw, 20px);
+  flex-shrink: 0;
+}
+
+@media (max-height: 600px) and (orientation: landscape) {
+  .control-panel {
+    min-width: clamp(120px, 15vw, 180px);
+    padding: clamp(8px, 1.5vw, 15px);
+  }
 }
 
 .buttons-container {
@@ -143,9 +259,9 @@ h1 {
   background: linear-gradient(135deg, #2a2a3e 0%, #1a1a2e 100%);
   border: 3px solid #ff4081;
   color: #fff;
-  font-size: 1rem;
+  font-size: clamp(0.8rem, 2vw, 1rem);
   font-weight: bold;
-  padding: 25px 20px;
+  padding: clamp(15px, 2.5vw, 25px) clamp(12px, 2vw, 20px);
   border-radius: 15px;
   cursor: pointer;
   transition: all 0.1s;
@@ -160,19 +276,38 @@ h1 {
   justify-content: center;
   gap: 5px;
   user-select: none;
-  min-height: 120px;
+  -webkit-user-select: none;
+  min-height: clamp(80px, 12vw, 120px);
   width: 100%;
+  touch-action: manipulation;
+}
+
+@media (max-height: 600px) and (orientation: landscape) {
+  .pad {
+    min-height: clamp(60px, 10vw, 100px);
+    padding: clamp(10px, 2vw, 15px) clamp(8px, 1.5vw, 15px);
+  }
 }
 
 .pad-label {
-  font-size: 1.3rem;
+  font-size: clamp(1rem, 2.5vw, 1.3rem);
   font-weight: bold;
 }
 
 .pad-subtitle {
-  font-size: 0.9rem;
+  font-size: clamp(0.7rem, 1.5vw, 0.9rem);
   opacity: 0.8;
   font-weight: normal;
+}
+
+@media (max-height: 600px) and (orientation: landscape) {
+  .pad-label {
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+  }
+  
+  .pad-subtitle {
+    font-size: clamp(0.6rem, 1.2vw, 0.8rem);
+  }
 }
 
 .pad:hover {

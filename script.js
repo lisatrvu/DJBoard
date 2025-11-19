@@ -1,3 +1,48 @@
+// Screen management
+let currentScreen = 'orientation';
+const orientationScreen = document.getElementById('orientation-screen');
+const mainContent = document.getElementById('main-content');
+
+// Check orientation
+function checkOrientation() {
+  const isLandscape = window.innerWidth > window.innerHeight;
+  return isLandscape;
+}
+
+// Show appropriate screen based on orientation
+function updateScreen() {
+  const isLandscape = checkOrientation();
+  
+  if (!isLandscape) {
+    // Show orientation screen
+    orientationScreen.classList.remove('hidden');
+    mainContent.classList.add('hidden');
+    currentScreen = 'orientation';
+  } else {
+    // In landscape mode - show DJ board
+    orientationScreen.classList.add('hidden');
+    mainContent.classList.remove('hidden');
+    currentScreen = 'main';
+  }
+}
+
+// Listen for orientation changes
+window.addEventListener('resize', () => {
+  setTimeout(updateScreen, 100);
+});
+
+window.addEventListener('orientationchange', () => {
+  setTimeout(updateScreen, 200);
+});
+
+// Check on load
+window.addEventListener('load', () => {
+  setTimeout(updateScreen, 100);
+});
+
+// Initialize on load
+updateScreen();
+
 // Sound management - create separate instances to prevent overlapping
 const soundInstances = {
   bass: [],
