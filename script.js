@@ -35,6 +35,7 @@ class Turntable {
     this.rotation = 0;
     this.lastTime = 0;
     this.velocity = 0;
+    this.isMoving = false; // Track if actually moving
     
     this.init();
   }
@@ -66,12 +67,8 @@ class Turntable {
     this.lastAngle = this.getAngleFromEvent(event);
     this.lastTime = Date.now();
     this.velocity = 0;
-    
-    // Start playing scratch sound
-    if (scratchSound.paused) {
-      scratchSound.currentTime = 0;
-      scratchSound.play().catch(e => console.log('Audio play failed:', e));
-    }
+    this.isMoving = false;
+    // Don't start sound yet - wait for actual movement
   }
 
   startDragTouch(event) {
@@ -93,15 +90,36 @@ class Turntable {
     if (angleDiff > 180) angleDiff -= 360;
     if (angleDiff < -180) angleDiff += 360;
     
-    // Update rotation
-    this.rotation += angleDiff;
-    this.plate.style.transform = `rotate(${this.rotation}deg)`;
-    
-    // Calculate velocity for sound pitch/volume adjustment
-    if (deltaTime > 0) {
-      this.velocity = Math.abs(angleDiff) / deltaTime;
-      // Adjust playback rate based on velocity
-      scratchSound.playbackRate = Math.max(0.5, Math.min(2, 1 + this.velocity * 0.01));
+    // Only update if there's actual movement (more than 1 degree)
+    if (Math.abs(angleDiff) > 1) {
+      this.isMoving = true;
+      
+      // Start playing scratch sound only when actually moving
+      if (scratchSound.paused) {
+        scratchSound.currentTime = 0;
+        scratchSound.play().catch(e => console.log('Audio play failed:', e));
+      }
+      
+      // Update rotation
+      this.rotation += angleDiff;
+      this.plate.style.transform = `rotate(${this.rotation}deg)`;
+      
+      // Calculate velocity for sound pitch/volume adjustment
+      if (deltaTime > 0) {
+        this.velocity = Math.abs(angleDiff) / deltaTime;
+        // Adjust playback rate based on velocity
+        if (!scratchSound.paused) {
+          scratchSound.playbackRate = Math.max(0.5, Math.min(2, 1 + this.velocity * 0.01));
+        }
+      }
+    } else {
+      // If not moving, stop the sound
+      if (!scratchSound.paused && this.isMoving) {
+        scratchSound.pause();
+        scratchSound.currentTime = 0;
+        scratchSound.playbackRate = 1;
+        this.isMoving = false;
+      }
     }
     
     this.lastAngle = currentAngle;
@@ -117,19 +135,14 @@ class Turntable {
   endDrag() {
     if (!this.isDragging) return;
     this.isDragging = false;
+    this.isMoving = false;
     
-    // Fade out or stop scratch sound
+    // Stop scratch sound immediately when dragging stops
     if (!scratchSound.paused) {
-      const fadeOut = setInterval(() => {
-        if (scratchSound.volume > 0.1) {
-          scratchSound.volume -= 0.1;
-        } else {
-          scratchSound.pause();
-          scratchSound.volume = 0.7;
-          scratchSound.playbackRate = 1;
-          clearInterval(fadeOut);
-        }
-      }, 50);
+      scratchSound.pause();
+      scratchSound.currentTime = 0;
+      scratchSound.volume = 0.7;
+      scratchSound.playbackRate = 1;
     }
   }
 }
