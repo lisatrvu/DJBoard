@@ -75,7 +75,10 @@ const soundInstances = {
 // Create multiple instances for each sound to allow quick retriggering
 function createSoundInstances(name, count = 3) {
   for (let i = 0; i < count; i++) {
-    const audio = new Audio(`sounds/${name}.mp3`);
+    // Use path that works both locally and on Vercel
+    // Try both relative paths to handle different deployment scenarios
+    const audioPath = `sounds/${name}.mp3`;
+    const audio = new Audio(audioPath);
     audio.preload = 'auto';
     audio.volume = 0.7;
     audio.loop = true; // Loop while held down
@@ -84,9 +87,27 @@ function createSoundInstances(name, count = 3) {
     audio.load();
     soundInstances[name].push(audio);
     
-    // Handle loading errors
+    // Handle loading errors with detailed logging
     audio.addEventListener('error', (e) => {
-      console.error(`Error loading sound: ${name}`, e, `File: sounds/${name}.mp3`);
+      console.error(`Error loading sound: ${name}`, {
+        error: e,
+        path: audioPath,
+        src: audio.src,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+        errorCode: audio.error ? audio.error.code : 'none'
+      });
+      
+      // Try alternative path if first attempt fails (for case sensitivity issues)
+      if (audio.error && audio.error.code === 4) {
+        console.log(`Trying alternative path for ${name}...`);
+        const altAudio = new Audio(`sounds/${name}.mp3`);
+        altAudio.preload = 'auto';
+        altAudio.volume = 0.7;
+        altAudio.loop = true;
+        altAudio.load();
+        soundInstances[name][i] = altAudio; // Replace the failed instance
+      }
     });
     
     // Log when sound is ready and ensure it's fully loaded
@@ -100,6 +121,13 @@ function createSoundInstances(name, count = 3) {
     audio.addEventListener('loadeddata', () => {
       console.log(`Sound loaded: ${name} (instance ${i + 1})`);
     }, { once: true });
+    
+    // Additional check for Bass sound specifically
+    if (name === 'Bass') {
+      audio.addEventListener('loadstart', () => {
+        console.log(`Bass sound ${i + 1} load started`);
+      }, { once: true });
+    }
   }
 }
 
@@ -122,6 +150,26 @@ function preloadAllSounds() {
       // Try to preload by accessing readyState
       if (audio.readyState >= 2) {
         console.log(`${soundName} (instance ${index + 1}) already loaded`);
+      } else {
+        console.log(`${soundName} (instance ${index + 1}) loading... (readyState: ${audio.readyState})`);
+      }
+      
+      // Special handling for Bass sound
+      if (soundName === 'Bass') {
+        // Try multiple times to ensure Bass loads
+        setTimeout(() => {
+          if (audio.readyState < 2) {
+            console.log(`Retrying Bass load (instance ${index + 1})...`);
+            audio.load();
+          }
+        }, 500);
+        
+        setTimeout(() => {
+          if (audio.readyState < 2) {
+            console.log(`Final retry for Bass (instance ${index + 1})...`);
+            audio.load();
+          }
+        }, 1500);
       }
     });
   });
@@ -386,9 +434,21 @@ pads.forEach(pad => {
       audioContext.resume();
     }
     
-    // Ensure sound is loaded
+    // Ensure sound is loaded - especially important for Bass
     if (currentSound.readyState < 2) {
+      console.log(`Reloading ${soundName} (readyState: ${currentSound.readyState})`);
       currentSound.load();
+      // Wait a bit for Bass to load if needed
+      if (soundName === 'Bass' && currentSound.readyState < 2) {
+        // Give it a moment to load
+        setTimeout(() => {
+          if (currentSound.readyState >= 2) {
+            currentSound.currentTime = 0;
+            currentSound.play().catch(e => console.error('Bass play after reload failed:', e));
+          }
+        }, 100);
+        return; // Exit early, will play after timeout
+      }
     }
     
     currentSound.currentTime = 0;
