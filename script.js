@@ -79,20 +79,31 @@ function createSoundInstances(name, count = 3) {
     audio.preload = 'auto';
     audio.volume = 0.7;
     audio.loop = true; // Loop while held down
-    // Optimize for mobile
-    audio.crossOrigin = 'anonymous';
-    // Preload the sound immediately
+    // Don't use crossOrigin for local files - it can cause issues on mobile
+    // Preload the sound immediately on page load
     audio.load();
     soundInstances[name].push(audio);
     
     // Handle loading errors
     audio.addEventListener('error', (e) => {
-      console.error(`Error loading sound: ${name}`, e);
+      console.error(`Error loading sound: ${name}`, e, `File: sounds/${name}.mp3`);
     });
+    
+    // Log when sound is ready and ensure it's fully loaded
+    audio.addEventListener('canplaythrough', () => {
+      console.log(`Sound ready: ${name} (instance ${i + 1})`);
+      // Try to preload by setting currentTime (helps with mobile)
+      audio.currentTime = 0;
+    }, { once: true });
+    
+    // Also try to load on loadeddata event
+    audio.addEventListener('loadeddata', () => {
+      console.log(`Sound loaded: ${name} (instance ${i + 1})`);
+    }, { once: true });
   }
 }
 
-// Create instances for button sounds
+// Create instances for button sounds - preload immediately on page load
 createSoundInstances('Beat 1');
 createSoundInstances('Beat 2');
 createSoundInstances('Bass');
@@ -100,6 +111,24 @@ createSoundInstances('Drum');
 
 // Verify sounds are loaded
 console.log('Sound instances created:', Object.keys(soundInstances));
+
+// Force preload all sounds immediately (especially important for Bass on mobile)
+function preloadAllSounds() {
+  Object.keys(soundInstances).forEach(soundName => {
+    const instances = soundInstances[soundName];
+    instances.forEach((audio, index) => {
+      // Force load each instance
+      audio.load();
+      // Try to preload by accessing readyState
+      if (audio.readyState >= 2) {
+        console.log(`${soundName} (instance ${index + 1}) already loaded`);
+      }
+    });
+  });
+}
+
+// Preload all sounds when page loads
+preloadAllSounds();
 
 // Scratch sound instances for each turntable - preload immediately
 const scratchSounds = {
@@ -112,7 +141,7 @@ function createScratchSound(id) {
   const sound = new Audio('sounds/scratch.mp3');
   sound.preload = 'auto';
   sound.volume = 0.7;
-  sound.crossOrigin = 'anonymous';
+  // Don't use crossOrigin for local files - it can cause issues on mobile
   // Preload the sound immediately
   sound.load();
   // Try to preload by setting currentTime (helps with mobile)
@@ -341,12 +370,25 @@ pads.forEach(pad => {
     
     if (!currentSound) {
       console.error(`Sound not found: ${soundName}. Available:`, Object.keys(soundInstances));
-      return;
+      // Try to reload the sound
+      const instances = soundInstances[soundName];
+      if (instances && instances.length > 0) {
+        // Try the first instance even if it's not paused
+        currentSound = instances[0];
+        currentSound.load(); // Reload the sound
+      } else {
+        return;
+      }
     }
     
     // Ensure audio context is active
     if (audioContext && audioContext.state === 'suspended') {
       audioContext.resume();
+    }
+    
+    // Ensure sound is loaded
+    if (currentSound.readyState < 2) {
+      currentSound.load();
     }
     
     currentSound.currentTime = 0;
@@ -377,10 +419,13 @@ pads.forEach(pad => {
           }
         })
         .catch(error => {
-          console.log('Audio play failed:', error, 'Sound:', soundName);
+          console.log('Audio play failed:', error, 'Sound:', soundName, 'ReadyState:', currentSound.readyState);
           // Try to resume audio context if suspended
           if (audioContext && audioContext.state === 'suspended') {
             audioContext.resume().then(() => {
+              // Reload and try again
+              currentSound.load();
+              currentSound.currentTime = 0;
               currentSound.play()
                 .then(() => {
                   isPlaying = true;
@@ -405,6 +450,17 @@ pads.forEach(pad => {
                 })
                 .catch(e => console.log('Retry failed:', e, 'Sound:', soundName));
             });
+          } else {
+            // If no audio context, try reloading the sound
+            currentSound.load();
+            setTimeout(() => {
+              currentSound.play()
+                .then(() => {
+                  isPlaying = true;
+                  pad.classList.add('active');
+                })
+                .catch(e => console.log('Final retry failed:', e, 'Sound:', soundName));
+            }, 100);
           }
         });
     }
