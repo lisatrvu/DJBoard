@@ -101,13 +101,13 @@ createSoundInstances('Drum');
 // Verify sounds are loaded
 console.log('Sound instances created:', Object.keys(soundInstances));
 
-// Scratch sound instances for each turntable
+// Scratch sound instances for each turntable - preload immediately
 const scratchSounds = {
   turntable1: null,
   turntable2: null
 };
 
-// Create scratch sound instances
+// Create and preload scratch sound instances immediately on page load
 function createScratchSound(id) {
   const sound = new Audio('sounds/scratch.mp3');
   sound.preload = 'auto';
@@ -115,9 +115,17 @@ function createScratchSound(id) {
   sound.crossOrigin = 'anonymous';
   // Preload the sound immediately
   sound.load();
+  // Try to preload by setting currentTime (helps with mobile)
+  sound.addEventListener('canplaythrough', () => {
+    console.log(`Scratch sound ${id} preloaded and ready`);
+  }, { once: true });
   scratchSounds[`turntable${id}`] = sound;
   return sound;
 }
+
+// Preload scratch sounds immediately when page loads
+const scratchSound1 = createScratchSound(1);
+const scratchSound2 = createScratchSound(2);
 
 // Turntable functionality
 class Turntable {
@@ -132,8 +140,8 @@ class Turntable {
     this.velocity = 0;
     this.isMoving = false; // Track if actually moving
     
-    // Create scratch sound for this turntable
-    this.scratchSound = createScratchSound(id);
+    // Use preloaded scratch sound for this turntable
+    this.scratchSound = scratchSounds[`turntable${id}`] || createScratchSound(id);
     
     this.init();
   }
