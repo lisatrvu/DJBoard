@@ -81,7 +81,14 @@ function createSoundInstances(name, count = 3) {
     audio.loop = true; // Loop while held down
     // Optimize for mobile
     audio.crossOrigin = 'anonymous';
+    // Preload the sound immediately
+    audio.load();
     soundInstances[name].push(audio);
+    
+    // Handle loading errors
+    audio.addEventListener('error', (e) => {
+      console.error(`Error loading sound: ${name}`, e);
+    });
   }
 }
 
@@ -90,6 +97,9 @@ createSoundInstances('Beat 1');
 createSoundInstances('Beat 2');
 createSoundInstances('Bass');
 createSoundInstances('Drum');
+
+// Verify sounds are loaded
+console.log('Sound instances created:', Object.keys(soundInstances));
 
 // Scratch sound instances for each turntable
 const scratchSounds = {
@@ -103,6 +113,8 @@ function createScratchSound(id) {
   sound.preload = 'auto';
   sound.volume = 0.7;
   sound.crossOrigin = 'anonymous';
+  // Preload the sound immediately
+  sound.load();
   scratchSounds[`turntable${id}`] = sound;
   return sound;
 }
@@ -162,7 +174,15 @@ class Turntable {
     this.lastTime = Date.now();
     this.velocity = 0;
     this.isMoving = false;
-    // Don't start sound yet - wait for actual movement
+    
+    // Preload and prepare scratch sound immediately
+    if (this.scratchSound) {
+      this.scratchSound.currentTime = 0;
+      // Try to play immediately to reduce delay
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+    }
   }
 
   startDragTouch(event) {
@@ -187,28 +207,40 @@ class Turntable {
     if (angleDiff > 180) angleDiff -= 360;
     if (angleDiff < -180) angleDiff += 360;
     
-    // Only update if there's actual movement (more than 1 degree)
-    if (Math.abs(angleDiff) > 1) {
+    // Update rotation immediately (no threshold for visual feedback)
+    this.rotation += angleDiff;
+    this.plate.style.transform = `rotate(${this.rotation}deg)`;
+    
+    // Only play sound if there's actual movement (reduced threshold for faster response)
+    if (Math.abs(angleDiff) > 0.3) {
       this.isMoving = true;
       
-      // Start playing scratch sound only when actually moving
-      if (this.scratchSound && (this.scratchSound.paused || this.scratchSound.readyState < 2)) {
-        this.scratchSound.currentTime = 0;
-        const playPromise = this.scratchSound.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              // Audio is playing
-            })
-            .catch(error => {
-              console.log('Scratch sound play failed:', error);
-              // Try to resume audio context if suspended
-              if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume().then(() => {
-                  this.scratchSound.play().catch(e => console.log('Retry failed:', e));
-                });
-              }
-            });
+      // Start playing scratch sound immediately when moving
+      if (this.scratchSound) {
+        // Ensure audio context is active
+        if (audioContext && audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+        
+        // Play sound if paused or not playing
+        if (this.scratchSound.paused || this.scratchSound.ended) {
+          this.scratchSound.currentTime = 0;
+          const playPromise = this.scratchSound.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                // Audio is playing
+              })
+              .catch(error => {
+                console.log('Scratch sound play failed:', error);
+                // Try to resume audio context if suspended
+                if (audioContext && audioContext.state === 'suspended') {
+                  audioContext.resume().then(() => {
+                    this.scratchSound.play().catch(e => console.log('Retry failed:', e));
+                  });
+                }
+              });
+          }
         }
       }
       
@@ -217,10 +249,6 @@ class Turntable {
       if (ring) {
         ring.classList.add('active');
       }
-      
-      // Update rotation
-      this.rotation += angleDiff;
-      this.plate.style.transform = `rotate(${this.rotation}deg)`;
       
       // Calculate velocity for sound pitch/volume adjustment
       if (deltaTime > 0 && this.scratchSound) {
@@ -313,49 +341,74 @@ pads.forEach(pad => {
     const soundName = pad.dataset.sound;
     currentSound = getAvailableSound(soundName);
     
-    if (currentSound) {
-      currentSound.currentTime = 0;
-      const playPromise = currentSound.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            isPlaying = true;
-            pad.classList.add('active');
-            
-            // Trigger neon ring animation continuously
-            const ring = pad.querySelector('.neon-ring');
-            if (ring) {
-              ring.classList.add('pulse');
-              // Keep pulsing while sound is playing
-              pulseInterval = setInterval(() => {
-                if (!isPlaying) {
-                  clearInterval(pulseInterval);
-                  pulseInterval = null;
-                  ring.classList.remove('pulse');
-                  return;
-                }
+    if (!currentSound) {
+      console.error(`Sound not found: ${soundName}. Available:`, Object.keys(soundInstances));
+      return;
+    }
+    
+    // Ensure audio context is active
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+    
+    currentSound.currentTime = 0;
+    const playPromise = currentSound.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          isPlaying = true;
+          pad.classList.add('active');
+          
+          // Trigger neon ring animation continuously
+          const ring = pad.querySelector('.neon-ring');
+          if (ring) {
+            ring.classList.add('pulse');
+            // Keep pulsing while sound is playing
+            pulseInterval = setInterval(() => {
+              if (!isPlaying) {
+                clearInterval(pulseInterval);
+                pulseInterval = null;
                 ring.classList.remove('pulse');
-                // Force reflow to restart animation
-                void ring.offsetWidth;
-                ring.classList.add('pulse');
-              }, 1500); // Pulse every 1.5 seconds (matching animation duration)
-            }
-          })
-          .catch(error => {
-            console.log('Audio play failed:', error, 'Sound:', soundName);
-            // Try to resume audio context if suspended
-            if (audioContext && audioContext.state === 'suspended') {
-              audioContext.resume().then(() => {
-                currentSound.play()
-                  .then(() => {
-                    isPlaying = true;
-                    pad.classList.add('active');
-                  })
-                  .catch(e => console.log('Retry failed:', e));
-              });
-            }
-          });
-      }
+                return;
+              }
+              ring.classList.remove('pulse');
+              // Force reflow to restart animation
+              void ring.offsetWidth;
+              ring.classList.add('pulse');
+            }, 1500); // Pulse every 1.5 seconds (matching animation duration)
+          }
+        })
+        .catch(error => {
+          console.log('Audio play failed:', error, 'Sound:', soundName);
+          // Try to resume audio context if suspended
+          if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+              currentSound.play()
+                .then(() => {
+                  isPlaying = true;
+                  pad.classList.add('active');
+                  
+                  // Trigger neon ring animation
+                  const ring = pad.querySelector('.neon-ring');
+                  if (ring) {
+                    ring.classList.add('pulse');
+                    pulseInterval = setInterval(() => {
+                      if (!isPlaying) {
+                        clearInterval(pulseInterval);
+                        pulseInterval = null;
+                        ring.classList.remove('pulse');
+                        return;
+                      }
+                      ring.classList.remove('pulse');
+                      void ring.offsetWidth;
+                      ring.classList.add('pulse');
+                    }, 1500);
+                  }
+                })
+                .catch(e => console.log('Retry failed:', e, 'Sound:', soundName));
+            });
+          }
+        });
     }
   }
 
