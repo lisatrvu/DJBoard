@@ -95,18 +95,48 @@ function createSoundInstances(name, count = 3) {
         src: audio.src,
         networkState: audio.networkState,
         readyState: audio.readyState,
-        errorCode: audio.error ? audio.error.code : 'none'
+        errorCode: audio.error ? audio.error.code : 'none',
+        errorMessage: audio.error ? audio.error.message : 'none'
       });
       
-      // Try alternative path if first attempt fails (for case sensitivity issues)
-      if (audio.error && audio.error.code === 4) {
-        console.log(`Trying alternative path for ${name}...`);
-        const altAudio = new Audio(`sounds/${name}.mp3`);
-        altAudio.preload = 'auto';
-        altAudio.volume = 0.7;
-        altAudio.loop = true;
-        altAudio.load();
-        soundInstances[name][i] = altAudio; // Replace the failed instance
+      // Try alternative paths for case sensitivity issues (especially for Bass)
+      if (audio.error) {
+        console.log(`Trying alternative paths for ${name}...`);
+        const alternatives = [
+          `sounds/${name.toLowerCase()}.mp3`,
+          `sounds/${name.toUpperCase()}.mp3`,
+          `./sounds/${name}.mp3`,
+          `/sounds/${name}.mp3`
+        ];
+        
+        let altIndex = 0;
+        const tryAlternative = () => {
+          if (altIndex >= alternatives.length) {
+            console.error(`All alternative paths failed for ${name}`);
+            return;
+          }
+          
+          const altPath = alternatives[altIndex];
+          console.log(`Trying: ${altPath}`);
+          const altAudio = new Audio(altPath);
+          altAudio.preload = 'auto';
+          altAudio.volume = 0.7;
+          altAudio.loop = true;
+          
+          altAudio.addEventListener('error', () => {
+            altIndex++;
+            tryAlternative();
+          });
+          
+          altAudio.addEventListener('canplaythrough', () => {
+            console.log(`Successfully loaded ${name} from ${altPath}`);
+            soundInstances[name][i] = altAudio; // Replace the failed instance
+          }, { once: true });
+          
+          altAudio.load();
+        };
+        
+        tryAlternative();
       }
     });
     
@@ -136,6 +166,35 @@ createSoundInstances('Beat 1');
 createSoundInstances('Beat 2');
 createSoundInstances('Bass');
 createSoundInstances('Drum');
+
+// Special verification for Bass sound - test if file is accessible
+function verifyBassSound() {
+  const testAudio = new Audio('sounds/Bass.mp3');
+  testAudio.addEventListener('canplaythrough', () => {
+    console.log('✓ Bass.mp3 is accessible and ready');
+  }, { once: true });
+  testAudio.addEventListener('error', (e) => {
+    console.error('✗ Bass.mp3 failed to load:', {
+      error: e,
+      errorCode: testAudio.error ? testAudio.error.code : 'none',
+      errorMessage: testAudio.error ? testAudio.error.message : 'none',
+      src: testAudio.src
+    });
+    // Try lowercase version
+    const testAudio2 = new Audio('sounds/bass.mp3');
+    testAudio2.addEventListener('canplaythrough', () => {
+      console.log('✓ bass.mp3 (lowercase) is accessible');
+    }, { once: true });
+    testAudio2.addEventListener('error', () => {
+      console.error('✗ bass.mp3 (lowercase) also failed');
+    }, { once: true });
+    testAudio2.load();
+  }, { once: true });
+  testAudio.load();
+}
+
+// Verify Bass sound on page load
+verifyBassSound();
 
 // Verify sounds are loaded
 console.log('Sound instances created:', Object.keys(soundInstances));
@@ -438,16 +497,58 @@ pads.forEach(pad => {
     if (currentSound.readyState < 2) {
       console.log(`Reloading ${soundName} (readyState: ${currentSound.readyState})`);
       currentSound.load();
-      // Wait a bit for Bass to load if needed
-      if (soundName === 'Bass' && currentSound.readyState < 2) {
-        // Give it a moment to load
-        setTimeout(() => {
+      
+      // For Bass, wait for it to be ready before playing
+      if (soundName === 'Bass') {
+        const waitForBass = () => {
           if (currentSound.readyState >= 2) {
             currentSound.currentTime = 0;
-            currentSound.play().catch(e => console.error('Bass play after reload failed:', e));
+            const playPromise = currentSound.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  isPlaying = true;
+                  pad.classList.add('active');
+                  const ring = pad.querySelector('.neon-ring');
+                  if (ring) {
+                    ring.classList.add('pulse');
+                    pulseInterval = setInterval(() => {
+                      if (!isPlaying) {
+                        clearInterval(pulseInterval);
+                        pulseInterval = null;
+                        ring.classList.remove('pulse');
+                        return;
+                      }
+                      ring.classList.remove('pulse');
+                      void ring.offsetWidth;
+                      ring.classList.add('pulse');
+                    }, 1500);
+                  }
+                })
+                .catch(e => {
+                  console.error('Bass play failed after reload:', e);
+                  // Try one more time with a fresh instance
+                  const instances = soundInstances['Bass'];
+                  if (instances && instances.length > 0) {
+                    const freshSound = instances.find(s => s.readyState >= 2) || instances[0];
+                    freshSound.currentTime = 0;
+                    freshSound.play()
+                      .then(() => {
+                        isPlaying = true;
+                        pad.classList.add('active');
+                        currentSound = freshSound;
+                      })
+                      .catch(err => console.error('Final Bass play attempt failed:', err));
+                  }
+                });
+            }
+          } else {
+            // Wait a bit more
+            setTimeout(waitForBass, 50);
           }
-        }, 100);
-        return; // Exit early, will play after timeout
+        };
+        waitForBass();
+        return; // Exit early, will play after loading
       }
     }
     
