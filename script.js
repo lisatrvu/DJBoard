@@ -91,11 +91,21 @@ createSoundInstances('Beat 2');
 createSoundInstances('Bass');
 createSoundInstances('Drum');
 
-// Scratch sound (single instance for turntables)
-const scratchSound = new Audio('sounds/scratch.mp3');
-scratchSound.preload = 'auto';
-scratchSound.volume = 0.7;
-scratchSound.crossOrigin = 'anonymous';
+// Scratch sound instances for each turntable
+const scratchSounds = {
+  turntable1: null,
+  turntable2: null
+};
+
+// Create scratch sound instances
+function createScratchSound(id) {
+  const sound = new Audio('sounds/scratch.mp3');
+  sound.preload = 'auto';
+  sound.volume = 0.7;
+  sound.crossOrigin = 'anonymous';
+  scratchSounds[`turntable${id}`] = sound;
+  return sound;
+}
 
 // Turntable functionality
 class Turntable {
@@ -109,6 +119,9 @@ class Turntable {
     this.lastTime = 0;
     this.velocity = 0;
     this.isMoving = false; // Track if actually moving
+    
+    // Create scratch sound for this turntable
+    this.scratchSound = createScratchSound(id);
     
     this.init();
   }
@@ -141,6 +154,9 @@ class Turntable {
 
   startDrag(event) {
     event.preventDefault();
+    // Initialize audio context on first interaction
+    initAudioContext();
+    
     this.isDragging = true;
     this.lastAngle = this.getAngleFromEvent(event);
     this.lastTime = Date.now();
@@ -159,6 +175,9 @@ class Turntable {
     if (!this.isDragging) return;
     event.preventDefault();
     
+    // Initialize audio context on first interaction
+    initAudioContext();
+    
     const currentAngle = this.getAngleFromEvent(event);
     const currentTime = Date.now();
     const deltaTime = currentTime - this.lastTime;
@@ -173,9 +192,24 @@ class Turntable {
       this.isMoving = true;
       
       // Start playing scratch sound only when actually moving
-      if (scratchSound.paused) {
-        scratchSound.currentTime = 0;
-        scratchSound.play().catch(e => console.log('Audio play failed:', e));
+      if (this.scratchSound && (this.scratchSound.paused || this.scratchSound.readyState < 2)) {
+        this.scratchSound.currentTime = 0;
+        const playPromise = this.scratchSound.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              // Audio is playing
+            })
+            .catch(error => {
+              console.log('Scratch sound play failed:', error);
+              // Try to resume audio context if suspended
+              if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                  this.scratchSound.play().catch(e => console.log('Retry failed:', e));
+                });
+              }
+            });
+        }
       }
       
       // Trigger neon ring animation instantly
@@ -189,19 +223,19 @@ class Turntable {
       this.plate.style.transform = `rotate(${this.rotation}deg)`;
       
       // Calculate velocity for sound pitch/volume adjustment
-      if (deltaTime > 0) {
+      if (deltaTime > 0 && this.scratchSound) {
         this.velocity = Math.abs(angleDiff) / deltaTime;
         // Adjust playback rate based on velocity
-        if (!scratchSound.paused) {
-          scratchSound.playbackRate = Math.max(0.5, Math.min(2, 1 + this.velocity * 0.01));
+        if (!this.scratchSound.paused) {
+          this.scratchSound.playbackRate = Math.max(0.5, Math.min(2, 1 + this.velocity * 0.01));
         }
       }
     } else {
       // If not moving, stop the sound and ring
-      if (!scratchSound.paused && this.isMoving) {
-        scratchSound.pause();
-        scratchSound.currentTime = 0;
-        scratchSound.playbackRate = 1;
+      if (this.scratchSound && !this.scratchSound.paused && this.isMoving) {
+        this.scratchSound.pause();
+        this.scratchSound.currentTime = 0;
+        this.scratchSound.playbackRate = 1;
         this.isMoving = false;
         
         // Stop neon ring
@@ -228,11 +262,11 @@ class Turntable {
     this.isMoving = false;
     
     // Stop scratch sound immediately when dragging stops
-    if (!scratchSound.paused) {
-      scratchSound.pause();
-      scratchSound.currentTime = 0;
-      scratchSound.volume = 0.7;
-      scratchSound.playbackRate = 1;
+    if (this.scratchSound && !this.scratchSound.paused) {
+      this.scratchSound.pause();
+      this.scratchSound.currentTime = 0;
+      this.scratchSound.volume = 0.7;
+      this.scratchSound.playbackRate = 1;
     }
     
     // Stop neon ring
@@ -273,32 +307,54 @@ pads.forEach(pad => {
   function startSound() {
     if (isPlaying) return;
     
+    // Initialize audio context on first interaction
+    initAudioContext();
+    
     const soundName = pad.dataset.sound;
     currentSound = getAvailableSound(soundName);
     
     if (currentSound) {
       currentSound.currentTime = 0;
-      currentSound.play().catch(e => console.log('Audio play failed:', e));
-      isPlaying = true;
-      pad.classList.add('active');
-      
-      // Trigger neon ring animation continuously
-      const ring = pad.querySelector('.neon-ring');
-      if (ring) {
-        ring.classList.add('pulse');
-        // Keep pulsing while sound is playing
-        pulseInterval = setInterval(() => {
-          if (!isPlaying) {
-            clearInterval(pulseInterval);
-            pulseInterval = null;
-            ring.classList.remove('pulse');
-            return;
-          }
-          ring.classList.remove('pulse');
-          // Force reflow to restart animation
-          void ring.offsetWidth;
-          ring.classList.add('pulse');
-        }, 1500); // Pulse every 1.5 seconds (matching animation duration)
+      const playPromise = currentSound.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            isPlaying = true;
+            pad.classList.add('active');
+            
+            // Trigger neon ring animation continuously
+            const ring = pad.querySelector('.neon-ring');
+            if (ring) {
+              ring.classList.add('pulse');
+              // Keep pulsing while sound is playing
+              pulseInterval = setInterval(() => {
+                if (!isPlaying) {
+                  clearInterval(pulseInterval);
+                  pulseInterval = null;
+                  ring.classList.remove('pulse');
+                  return;
+                }
+                ring.classList.remove('pulse');
+                // Force reflow to restart animation
+                void ring.offsetWidth;
+                ring.classList.add('pulse');
+              }, 1500); // Pulse every 1.5 seconds (matching animation duration)
+            }
+          })
+          .catch(error => {
+            console.log('Audio play failed:', error, 'Sound:', soundName);
+            // Try to resume audio context if suspended
+            if (audioContext && audioContext.state === 'suspended') {
+              audioContext.resume().then(() => {
+                currentSound.play()
+                  .then(() => {
+                    isPlaying = true;
+                    pad.classList.add('active');
+                  })
+                  .catch(e => console.log('Retry failed:', e));
+              });
+            }
+          });
       }
     }
   }
