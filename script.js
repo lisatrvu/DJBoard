@@ -43,10 +43,33 @@ window.addEventListener('load', () => {
 // Initialize on load
 updateScreen();
 
+// Audio context for better mobile performance
+let audioContext = null;
+let isAudioContextInitialized = false;
+
+// Initialize audio context on first user interaction (required for mobile)
+function initAudioContext() {
+  if (isAudioContextInitialized) return;
+  
+  try {
+    // Create AudioContext for better mobile audio handling
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    isAudioContextInitialized = true;
+  } catch (e) {
+    console.log('AudioContext not supported, using fallback');
+  }
+}
+
+// Initialize audio on first touch/interaction
+document.addEventListener('touchstart', initAudioContext, { once: true });
+document.addEventListener('click', initAudioContext, { once: true });
+
 // Sound management - create separate instances to prevent overlapping
 const soundInstances = {
-  bass: [],
-  beats: []
+  'Beat 1': [],
+  'Beat 2': [],
+  'Bass': [],
+  'Drum': []
 };
 
 // Create multiple instances for each sound to allow quick retriggering
@@ -56,18 +79,23 @@ function createSoundInstances(name, count = 3) {
     audio.preload = 'auto';
     audio.volume = 0.7;
     audio.loop = true; // Loop while held down
+    // Optimize for mobile
+    audio.crossOrigin = 'anonymous';
     soundInstances[name].push(audio);
   }
 }
 
 // Create instances for button sounds
-createSoundInstances('bass');
-createSoundInstances('beats');
+createSoundInstances('Beat 1');
+createSoundInstances('Beat 2');
+createSoundInstances('Bass');
+createSoundInstances('Drum');
 
 // Scratch sound (single instance for turntables)
 const scratchSound = new Audio('sounds/scratch.mp3');
 scratchSound.preload = 'auto';
 scratchSound.volume = 0.7;
+scratchSound.crossOrigin = 'anonymous';
 
 // Turntable functionality
 class Turntable {
@@ -86,14 +114,19 @@ class Turntable {
   }
 
   init() {
-    this.element.addEventListener('mousedown', this.startDrag.bind(this));
-    document.addEventListener('mousemove', this.drag.bind(this));
-    document.addEventListener('mouseup', this.endDrag.bind(this));
+    // Mouse events
+    this.element.addEventListener('mousedown', this.startDrag.bind(this), { passive: false });
+    document.addEventListener('mousemove', this.drag.bind(this), { passive: false });
+    document.addEventListener('mouseup', this.endDrag.bind(this), { passive: false });
     
-    // Touch support
-    this.element.addEventListener('touchstart', this.startDragTouch.bind(this));
-    document.addEventListener('touchmove', this.dragTouch.bind(this));
-    document.addEventListener('touchend', this.endDrag.bind(this));
+    // Touch support - optimized for mobile
+    this.element.addEventListener('touchstart', this.startDragTouch.bind(this), { passive: false });
+    document.addEventListener('touchmove', this.dragTouch.bind(this), { passive: false });
+    document.addEventListener('touchend', this.endDrag.bind(this), { passive: false });
+    document.addEventListener('touchcancel', this.endDrag.bind(this), { passive: false });
+    
+    // Initialize audio context on first interaction
+    initAudioContext();
   }
 
   getAngleFromEvent(event) {
@@ -145,6 +178,12 @@ class Turntable {
         scratchSound.play().catch(e => console.log('Audio play failed:', e));
       }
       
+      // Trigger neon ring animation instantly
+      const ring = this.element.querySelector('.turntable-neon-ring');
+      if (ring) {
+        ring.classList.add('active');
+      }
+      
       // Update rotation
       this.rotation += angleDiff;
       this.plate.style.transform = `rotate(${this.rotation}deg)`;
@@ -158,12 +197,18 @@ class Turntable {
         }
       }
     } else {
-      // If not moving, stop the sound
+      // If not moving, stop the sound and ring
       if (!scratchSound.paused && this.isMoving) {
         scratchSound.pause();
         scratchSound.currentTime = 0;
         scratchSound.playbackRate = 1;
         this.isMoving = false;
+        
+        // Stop neon ring
+        const ring = this.element.querySelector('.turntable-neon-ring');
+        if (ring) {
+          ring.classList.remove('active');
+        }
       }
     }
     
@@ -189,6 +234,12 @@ class Turntable {
       scratchSound.volume = 0.7;
       scratchSound.playbackRate = 1;
     }
+    
+    // Stop neon ring
+    const ring = this.element.querySelector('.turntable-neon-ring');
+    if (ring) {
+      ring.classList.remove('active');
+    }
   }
 }
 
@@ -202,6 +253,7 @@ const pads = document.querySelectorAll('.pad');
 pads.forEach(pad => {
   let currentSound = null;
   let isPlaying = false;
+  let pulseInterval = null;
 
   // Find an available sound instance
   function getAvailableSound(name) {
@@ -229,6 +281,25 @@ pads.forEach(pad => {
       currentSound.play().catch(e => console.log('Audio play failed:', e));
       isPlaying = true;
       pad.classList.add('active');
+      
+      // Trigger neon ring animation continuously
+      const ring = pad.querySelector('.neon-ring');
+      if (ring) {
+        ring.classList.add('pulse');
+        // Keep pulsing while sound is playing
+        pulseInterval = setInterval(() => {
+          if (!isPlaying) {
+            clearInterval(pulseInterval);
+            pulseInterval = null;
+            ring.classList.remove('pulse');
+            return;
+          }
+          ring.classList.remove('pulse');
+          // Force reflow to restart animation
+          void ring.offsetWidth;
+          ring.classList.add('pulse');
+        }, 1500); // Pulse every 1.5 seconds (matching animation duration)
+      }
     }
   }
 
@@ -239,12 +310,24 @@ pads.forEach(pad => {
     currentSound.currentTime = 0;
     isPlaying = false;
     pad.classList.remove('active');
+    
+    // Stop neon ring animation
+    if (pulseInterval) {
+      clearInterval(pulseInterval);
+      pulseInterval = null;
+    }
+    const ring = pad.querySelector('.neon-ring');
+    if (ring) {
+      ring.classList.remove('pulse');
+    }
+    
     currentSound = null;
   }
 
   // Mouse events
   pad.addEventListener('mousedown', (e) => {
     e.preventDefault();
+    initAudioContext();
     startSound();
   });
 
@@ -256,17 +339,21 @@ pads.forEach(pad => {
     stopSound();
   });
 
-  // Touch events
+  // Touch events - optimized for mobile
   pad.addEventListener('touchstart', (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    initAudioContext();
     startSound();
-  });
+  }, { passive: false });
 
-  pad.addEventListener('touchend', () => {
+  pad.addEventListener('touchend', (e) => {
+    e.preventDefault();
     stopSound();
-  });
+  }, { passive: false });
 
-  pad.addEventListener('touchcancel', () => {
+  pad.addEventListener('touchcancel', (e) => {
+    e.preventDefault();
     stopSound();
-  });
+  }, { passive: false });
 });
