@@ -181,14 +181,38 @@ class Turntable {
     this.lastAngle = this.getAngleFromEvent(event);
     this.lastTime = Date.now();
     this.velocity = 0;
-    this.isMoving = false;
+    this.isMoving = true; // Set to true on touch
     
-    // Preload and prepare scratch sound immediately
+    // Start playing scratch sound immediately on touch
     if (this.scratchSound) {
-      this.scratchSound.currentTime = 0;
-      // Try to play immediately to reduce delay
+      // Ensure audio context is active
       if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
+      }
+      
+      // Play sound immediately on touch
+      this.scratchSound.currentTime = 0;
+      const playPromise = this.scratchSound.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            // Audio is playing
+          })
+          .catch(error => {
+            console.log('Scratch sound play failed on touch:', error);
+            // Try to resume audio context if suspended
+            if (audioContext && audioContext.state === 'suspended') {
+              audioContext.resume().then(() => {
+                this.scratchSound.play().catch(e => console.log('Retry failed:', e));
+              });
+            }
+          });
+      }
+      
+      // Trigger neon ring animation instantly
+      const ring = this.element.querySelector('.turntable-neon-ring');
+      if (ring) {
+        ring.classList.add('active');
       }
     }
   }
@@ -219,65 +243,31 @@ class Turntable {
     this.rotation += angleDiff;
     this.plate.style.transform = `rotate(${this.rotation}deg)`;
     
-    // Only play sound if there's actual movement (reduced threshold for faster response)
-    if (Math.abs(angleDiff) > 0.3) {
-      this.isMoving = true;
-      
-      // Start playing scratch sound immediately when moving
-      if (this.scratchSound) {
-        // Ensure audio context is active
-        if (audioContext && audioContext.state === 'suspended') {
-          audioContext.resume();
-        }
-        
-        // Play sound if paused or not playing
-        if (this.scratchSound.paused || this.scratchSound.ended) {
-          this.scratchSound.currentTime = 0;
-          const playPromise = this.scratchSound.play();
-          if (playPromise !== undefined) {
-            playPromise
-              .then(() => {
-                // Audio is playing
-              })
-              .catch(error => {
-                console.log('Scratch sound play failed:', error);
-                // Try to resume audio context if suspended
-                if (audioContext && audioContext.state === 'suspended') {
-                  audioContext.resume().then(() => {
-                    this.scratchSound.play().catch(e => console.log('Retry failed:', e));
-                  });
-                }
-              });
-          }
-        }
+    // Keep sound playing while dragging (it starts on touch)
+    if (this.scratchSound && this.isDragging) {
+      // Ensure audio context is active
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
       }
       
-      // Trigger neon ring animation instantly
+      // Keep sound playing if it stopped
+      if (this.scratchSound.paused || this.scratchSound.ended) {
+        this.scratchSound.currentTime = 0;
+        this.scratchSound.play().catch(e => console.log('Scratch sound play failed:', e));
+      }
+      
+      // Keep neon ring active
       const ring = this.element.querySelector('.turntable-neon-ring');
       if (ring) {
         ring.classList.add('active');
       }
       
-      // Calculate velocity for sound pitch/volume adjustment
-      if (deltaTime > 0 && this.scratchSound) {
+      // Calculate velocity for sound pitch/volume adjustment based on movement
+      if (deltaTime > 0 && Math.abs(angleDiff) > 0.1) {
         this.velocity = Math.abs(angleDiff) / deltaTime;
         // Adjust playback rate based on velocity
         if (!this.scratchSound.paused) {
           this.scratchSound.playbackRate = Math.max(0.5, Math.min(2, 1 + this.velocity * 0.01));
-        }
-      }
-    } else {
-      // If not moving, stop the sound and ring
-      if (this.scratchSound && !this.scratchSound.paused && this.isMoving) {
-        this.scratchSound.pause();
-        this.scratchSound.currentTime = 0;
-        this.scratchSound.playbackRate = 1;
-        this.isMoving = false;
-        
-        // Stop neon ring
-        const ring = this.element.querySelector('.turntable-neon-ring');
-        if (ring) {
-          ring.classList.remove('active');
         }
       }
     }
