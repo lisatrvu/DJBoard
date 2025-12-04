@@ -64,22 +64,20 @@ function initAudioContext() {
 function primeScratchSounds() {
   // Prime all scratch sound instances by playing and immediately pausing
   Object.keys(scratchSounds).forEach(key => {
-    const instances = scratchSounds[key];
-    instances.forEach(sound => {
-      if (sound.readyState >= 2) { // HAVE_CURRENT_DATA or better
-        const primePromise = sound.play();
-        if (primePromise !== undefined) {
-          primePromise
-            .then(() => {
-              sound.pause();
-              sound.currentTime = 0;
-            })
-            .catch(() => {
-              // Ignore priming errors
-            });
-        }
+    const sound = scratchSounds[key];
+    if (sound && sound.readyState >= 2) { // HAVE_CURRENT_DATA or better
+      const primePromise = sound.play();
+      if (primePromise !== undefined) {
+        primePromise
+          .then(() => {
+            sound.pause();
+            sound.currentTime = 0;
+          })
+          .catch(() => {
+            // Ignore priming errors
+          });
       }
-    });
+    }
   });
 }
 
@@ -266,63 +264,45 @@ function preloadAllSounds() {
 // Preload all sounds when page loads
 preloadAllSounds();
 
-// Scratch sound instances for each turntable - use multiple instances for instant playback
+// Scratch sound instances for each turntable - single looping instance per turntable
 const scratchSounds = {
-  turntable1: [],
-  turntable2: []
+  turntable1: null,
+  turntable2: null
 };
 
-// Create multiple scratch sound instances for instant playback (no delay between triggers)
-function createScratchSoundInstances(id, count = 3) {
-  const instances = [];
-  for (let i = 0; i < count; i++) {
-    const sound = new Audio('sounds/scratch.mp3');
-    sound.preload = 'auto';
-    sound.volume = 0.7;
-    sound.load();
-    
-    // Prime the audio when it's ready (play and immediately pause to prepare buffer)
-    sound.addEventListener('canplaythrough', () => {
-      console.log(`Scratch sound ${id} instance ${i + 1} ready`);
-      // Prime the audio for instant playback on mobile
-      const primePromise = sound.play();
-      if (primePromise !== undefined) {
-        primePromise
-          .then(() => {
-            // Immediately pause - this primes the audio buffer for instant playback
-            sound.pause();
-            sound.currentTime = 0;
-          })
-          .catch(() => {
-            // Ignore priming errors - will prime on first user interaction
-          });
-      }
-    }, { once: true });
-    
-    instances.push(sound);
-  }
-  scratchSounds[`turntable${id}`] = instances;
-  return instances;
+// Create and preload scratch sound for a turntable
+function createScratchSound(id) {
+  const sound = new Audio('sounds/scratch.mp3');
+  sound.preload = 'auto';
+  sound.volume = 0.7;
+  sound.loop = true; // Loop continuously while playing
+  sound.load();
+  
+  // Prime the audio when it's ready (play and immediately pause to prepare buffer)
+  sound.addEventListener('canplaythrough', () => {
+    console.log(`Scratch sound ${id} ready`);
+    // Prime the audio for instant playback on mobile
+    const primePromise = sound.play();
+    if (primePromise !== undefined) {
+      primePromise
+        .then(() => {
+          // Immediately pause - this primes the audio buffer for instant playback
+          sound.pause();
+          sound.currentTime = 0;
+        })
+        .catch(() => {
+          // Ignore priming errors - will prime on first user interaction
+        });
+    }
+  }, { once: true });
+  
+  scratchSounds[`turntable${id}`] = sound;
+  return sound;
 }
 
 // Preload scratch sounds immediately when page loads
-createScratchSoundInstances(1);
-createScratchSoundInstances(2);
-
-// Get next available scratch sound instance (round-robin for instant playback)
-function getNextScratchSound(id) {
-  const instances = scratchSounds[`turntable${id}`];
-  if (!instances || instances.length === 0) return null;
-  
-  // Find first paused/ready instance
-  for (let sound of instances) {
-    if (sound.paused || sound.ended) {
-      return sound;
-    }
-  }
-  // If all playing, use first one (will restart it)
-  return instances[0];
-}
+createScratchSound(1);
+createScratchSound(2);
 
 // Turntable functionality
 class Turntable {
@@ -369,6 +349,10 @@ class Turntable {
 
   startDrag(event) {
     event.preventDefault();
+    
+    // Prevent multiple startDrag calls if already dragging
+    if (this.isDragging) return;
+    
     // Initialize audio context on first interaction
     initAudioContext();
     
@@ -383,27 +367,30 @@ class Turntable {
     this.velocity = 0;
     this.isMoving = true; // Set to true on touch
     
-    // Get next available scratch sound instance for instant playback
-    this.currentScratchSound = getNextScratchSound(this.id);
+    // Get the scratch sound instance for this turntable
+    this.currentScratchSound = scratchSounds[`turntable${this.id}`];
     
     if (this.currentScratchSound) {
-      // Reset and play immediately - no waiting for promises
-      this.currentScratchSound.currentTime = 0;
-      this.currentScratchSound.volume = 0.7;
-      this.currentScratchSound.playbackRate = 1;
-      
-      // Play immediately - don't wait for promise to resolve
-      const playPromise = this.currentScratchSound.play();
-      if (playPromise !== undefined) {
-        // Fire and forget - sound should start immediately
-        playPromise.catch(error => {
-          // Only handle errors, don't wait for success
-          if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-              this.currentScratchSound.play().catch(() => {});
-            });
-          }
-        });
+      // Only start playing if not already playing (prevents glitches)
+      if (this.currentScratchSound.paused || this.currentScratchSound.ended) {
+        // Reset to beginning and play immediately
+        this.currentScratchSound.currentTime = 0;
+        this.currentScratchSound.volume = 0.7;
+        this.currentScratchSound.playbackRate = 1;
+        
+        // Play immediately - don't wait for promise to resolve
+        const playPromise = this.currentScratchSound.play();
+        if (playPromise !== undefined) {
+          // Fire and forget - sound should start immediately
+          playPromise.catch(error => {
+            // Only handle errors, don't wait for success
+            if (audioContext && audioContext.state === 'suspended') {
+              audioContext.resume().then(() => {
+                this.currentScratchSound.play().catch(() => {});
+              });
+            }
+          });
+        }
       }
       
       // Trigger neon ring animation instantly
@@ -447,10 +434,14 @@ class Turntable {
         audioContext.resume();
       }
       
-      // Keep sound playing if it stopped
-      if (this.currentScratchSound.paused || this.currentScratchSound.ended) {
+      // Only restart if sound actually stopped (not just paused for a moment)
+      // This prevents glitches from rapid play/pause cycles
+      if (this.currentScratchSound.ended) {
         this.currentScratchSound.currentTime = 0;
         this.currentScratchSound.play().catch(() => {}); // Silent fail
+      } else if (this.currentScratchSound.paused && this.isMoving) {
+        // Only resume if we're actually moving (prevents glitches from touch events)
+        this.currentScratchSound.play().catch(() => {});
       }
       
       // Keep neon ring active
@@ -459,11 +450,11 @@ class Turntable {
         ring.classList.add('active');
       }
       
-      // Calculate velocity for sound pitch/volume adjustment based on movement
+      // Calculate velocity for sound pitch adjustment based on movement
       if (deltaTime > 0 && Math.abs(angleDiff) > 0.1) {
         this.velocity = Math.abs(angleDiff) / deltaTime;
-        // Adjust playback rate based on velocity
-        if (!this.currentScratchSound.paused) {
+        // Adjust playback rate based on velocity (only if sound is playing)
+        if (!this.currentScratchSound.paused && !this.currentScratchSound.ended) {
           this.currentScratchSound.playbackRate = Math.max(0.5, Math.min(2, 1 + this.velocity * 0.01));
         }
       }
@@ -485,14 +476,15 @@ class Turntable {
     this.isMoving = false;
     
     // Stop scratch sound immediately when dragging stops
-    if (this.currentScratchSound && !this.currentScratchSound.paused) {
+    if (this.currentScratchSound) {
       this.currentScratchSound.pause();
       this.currentScratchSound.currentTime = 0;
       this.currentScratchSound.volume = 0.7;
       this.currentScratchSound.playbackRate = 1;
     }
     
-    this.currentScratchSound = null;
+    // Keep the reference to the sound instance for next use
+    // Don't set to null - we reuse the same instance
     
     // Stop neon ring
     const ring = this.element.querySelector('.turntable-neon-ring');
